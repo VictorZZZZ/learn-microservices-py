@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Виртуальное окружение
+.venv/
+
+# Локальные секреты — не коммитим
+.env
+
+# IDE и ОС
+.idea/
+.DS_Store

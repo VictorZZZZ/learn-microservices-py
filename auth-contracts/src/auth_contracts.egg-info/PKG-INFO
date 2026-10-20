@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: auth-contracts
+Version: 0.1.0
+Summary: Shared auth-domain contracts: roles, privileges
+Requires-Python: >=3.11

@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8.0
+# TestClient (интеграционные тесты роутеров без запуска uvicorn) работает через httpx
+httpx>=0.27

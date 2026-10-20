@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# Пакет-контракт auth-домена: енумы и общие типы, которые нужны и auth-сервису,
+# и его потребителям (сейчас microservice_1). Аналог core-библиотеки в Java,
+# которую собирают один раз и подключают к каждому сервису.
+#
+# Пока репозиторий один — сервисы ставят его как path-зависимость
+# ("-e ../auth-contracts" в requirements.txt). Если сервисы разъедутся по
+# отдельным репозиториям, пакет публикуется в приватный PyPI (GitLab Package
+# Registry, devpi, CodeArtifact) и подключается версией: auth-contracts==1.2.0.
+name = "auth-contracts"
+version = "0.1.0"
+description = "Shared auth-domain contracts: roles, privileges"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["src"]

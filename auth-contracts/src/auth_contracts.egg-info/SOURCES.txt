@@ -1,0 +1,8 @@
+pyproject.toml
+src/auth_contracts/__init__.py
+src/auth_contracts/privilege_name.py
+src/auth_contracts/role_name.py
+src/auth_contracts.egg-info/PKG-INFO
+src/auth_contracts.egg-info/SOURCES.txt
+src/auth_contracts.egg-info/dependency_links.txt
+src/auth_contracts.egg-info/top_level.txt

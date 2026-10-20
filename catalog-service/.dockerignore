@@ -1,0 +1,11 @@
+# Не попадает в Docker-образ
+.venv
+.env
+.idea
+.pytest_cache
+__pycache__
+tests
+.git
+.gitignore
+.dockerignore
+README.md
