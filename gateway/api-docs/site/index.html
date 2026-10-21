@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>API Documentation — Автолавка</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    header {
+      display: flex; align-items: center; gap: 16px;
+      padding: 10px 20px; border-bottom: 1px solid #e0e0e0;
+      background: #fafafa;
+    }
+    .hint { color: #888; font-size: 13px; }
+    #status.bad { color: #b00020; }
+    #error { color: #b00020; padding: 20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>API Documentation</strong>
+    <span id="status" class="hint">Автолавка · загрузка спецификаций…</span>
+  </header>
+
+  <div id="error" hidden></div>
+  <div id="redoc-container"></div>
+
+  <!-- Redoc подключаем из локального файла (лежит рядом), а не с CDN:
+       контейнер самодостаточен и работает без интернета -->
+  <script src="./redoc.standalone.js"></script>
+  <script>
+    // Спецификации всех сервисов склеиваются в ОДНУ документацию:
+    // в левой панели Redoc каждый сервис — отдельная группа (x-tagGroups),
+    // без выпадающего списка сверху.
+    //
+    // Поля записи сервиса:
+    //   key    — короткое имя, становится префиксом схем (защита от
+    //            коллизий: auth.RegisterRequest, catalog.ProductDto)
+    //   name   — как сервис называется в левой панели
+    //   prefix — публичный префикс gateway: пути в собранной спецификации
+    //            сразу показываются так, как их вызывать через :7777
+    //            (/catalog + /v1/products = /catalog/v1/products)
+    //   spec   — где этот же nginx отдаёт openapi.json сервиса
+    //            (см. location'ы в ../nginx.conf)
+    const APIS = [
+      { key: "auth",    name: "Auth Service",    prefix: "/auth",    spec: "/openapi/auth.json" },
+      { key: "catalog", name: "Catalog Service", prefix: "/catalog", spec: "/openapi/catalog.json" },
+      { key: "profile", name: "Profile Service", prefix: "/profile", spec: "/openapi/profile.json" },
+      // когда появится оркестратор: раскомментировать и добавить
+      // location /openapi/orchestrator.json в ../nginx.conf
+      // { key: "orchestrator", name: "Orchestrator (BFF)", prefix: "/api", spec: "/openapi/orchestrator.json" },
+    ];
+
+    // адрес, который подставляется в примеры кода (curl/Python/JS)
+    const GATEWAY_ORIGIN = "http://localhost:7777";
+
+    const statusEl = document.getElementById("status");
+    const errorEl = document.getElementById("error");
+    const container = document.getElementById("redoc-container");
+
+    const HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
+
+    async function loadJson(url) {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      return resp.json();
+    }
+
+    // Схемы разных сервисов могут называться одинаково, поэтому при
+    // склейке имя каждой схемы получает префикс сервиса, а все $ref
+    // на неё переписываются соответственно. Поиск по строке с кавычками
+    // гарантирует точное совпадение имени ("...Product" не заденет
+    // "...ProductDto").
+    function prefixSchemas(spec, key) {
+      const schemas = (spec.components && spec.components.schemas) || {};
+      let raw = JSON.stringify(spec);
+      for (const name of Object.keys(schemas)) {
+        raw = raw.split(`"#/components/schemas/${name}"`).join(`"#/components/schemas/${key}.${name}"`);
+      }
+      const patched = JSON.parse(raw);
+      const renamed = {};
+      for (const [name, schema] of Object.entries(patched.components.schemas || {})) {
+        renamed[`${key}.${name}`] = schema;
+      }
+      patched.components.schemas = renamed;
+      return patched;
+    }
+
+    // --- генерация примеров кода (Redoc показывает их вкладками
+    // через x-codeSamples: curl / Python requests / JS fetch) ---
+
+    // минимальное тело запроса из required-полей JSON-схемы
+    function requestBodySkeleton(op, merged) {
+      const json = op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
+      if (!json || !json.schema) return null;
+      let schema = json.schema;
+      if (schema.$ref) {
+        const name = schema.$ref.split("/").pop();
+        schema = (merged.components.schemas && merged.components.schemas[name]) || {};
+      }
+      if (!schema.properties) return {};
+      const skeleton = {};
+      for (const prop of schema.required || []) {
+        const p = schema.properties[prop] || {};
+        const type = Array.isArray(p.type) ? p.type[0] : p.type;
+        if (type === "string") skeleton[prop] = "string";
+        else if (type === "integer" || type === "number") skeleton[prop] = 0;
+        else if (type === "boolean") skeleton[prop] = false;
+        else if (type === "array") skeleton[prop] = [];
+        else skeleton[prop] = null;
+      }
+      return skeleton;
+    }
+
+    const toPythonLiteral = obj =>
+      JSON.stringify(obj).replace(/: true/g, ": True").replace(/: false/g, ": False").replace(/: null/g, ": None");
+
+    function addCodeSamples(merged) {
+      for (const [path, item] of Object.entries(merged.paths)) {
+        for (const method of HTTP_METHODS) {
+          const op = item[method];
+          if (!op || op["x-codeSamples"]) continue;
+
+          const url = GATEWAY_ORIGIN + path;
+          const body = requestBodySkeleton(op, merged);
+          const auth = Array.isArray(op.security) && op.security.length > 0;
+
+          const curlParts = [`curl -X ${method.toUpperCase()} '${url}'`];
+          if (auth) curlParts.push("-H 'Authorization: Bearer <ACCESS_TOKEN>'");
+          if (body) {
+            curlParts.push("-H 'Content-Type: application/json'");
+            curlParts.push(`--data '${JSON.stringify(body)}'`);
+          }
+
+          const pyLines = ["import requests", "", `resp = requests.${method}(`, `    "${url}",`];
+          if (auth) pyLines.push('    headers={"Authorization": "Bearer <ACCESS_TOKEN>"},');
+          if (body) pyLines.push(`    json=${toPythonLiteral(body)},`);
+          pyLines.push(")", "print(resp.status_code, resp.json())");
+
+          const jsLines = [`const resp = await fetch("${url}", {`, `  method: "${method.toUpperCase()}",`];
+          if (auth) jsLines.push('  headers: { Authorization: "Bearer <ACCESS_TOKEN>" },');
+          if (body) jsLines.push(`  body: JSON.stringify(${JSON.stringify(body)}),`);
+          jsLines.push("});", "console.log(resp.status, await resp.json());");
+
+          op["x-codeSamples"] = [
+            { lang: "curl", source: curlParts.join(" \\\n  ") },
+            { lang: "Python", source: pyLines.join("\n") },
+            { lang: "JavaScript", source: jsLines.join("\n") },
+          ];
+        }
+      }
+    }
+
+    async function buildMergedSpec() {
+      const merged = {
+        info: {
+          title: "Автолавка — API",
+          version: "live",
+          description:
+            "Все сервисы приложения в одной спецификации. Пути указаны уже с публичным " +
+            "префиксом gateway — отправляйте их как есть на http://localhost:7777. " +
+            "В примерах кода <ACCESS_TOKEN> — access-токен из POST /auth/v1/auth/login.",
+        },
+        tags: [],
+        "x-tagGroups": [],
+        paths: {},
+        components: {},
+      };
+      const loaded = [];
+      const failed = [];
+
+      const results = await Promise.allSettled(APIS.map(api => loadJson(api.spec)));
+
+      for (let i = 0; i < APIS.length; i++) {
+        const api = APIS[i];
+        const result = results[i];
+        if (result.status === "rejected") {
+          failed.push(api.name);
+          continue;
+        }
+        loaded.push(api.name);
+
+        let spec = result.value;
+        if (!merged.openapi) merged.openapi = spec.openapi || "3.1.0";
+
+        // группировка в левой панели: теги сервиса попадают в группу с его
+        // именем; операциям без тега навешиваем тег = имени сервиса
+        const groupTags = [];
+        for (const t of spec.tags || []) {
+          groupTags.push(t.name);
+          if (!merged.tags.some(x => x.name === t.name)) merged.tags.push(t);
+        }
+        for (const item of Object.values(spec.paths || {})) {
+          for (const method of HTTP_METHODS) {
+            const op = item[method];
+            if (!op) continue;
+            const known = (op.tags || []).filter(t => groupTags.includes(t));
+            if (known.length === 0) {
+              op.tags = [api.name];
+              if (!groupTags.includes(api.name)) {
+                groupTags.push(api.name);
+                merged.tags.push({ name: api.name });
+              }
+            }
+          }
+        }
+
+        spec = prefixSchemas(spec, api.key);
+
+        // пути — с публичным префиксом gateway
+        for (const [path, item] of Object.entries(spec.paths || {})) {
+          merged.paths[api.prefix + path] = item;
+        }
+        // схемы (уже с префиксом) и прочие components (securitySchemes и т.п.)
+        for (const [kind, value] of Object.entries(spec.components || {})) {
+          if (!merged.components[kind]) merged.components[kind] = {};
+          Object.assign(merged.components[kind], value);
+        }
+
+        merged["x-tagGroups"].push({ name: api.name, tags: groupTags });
+      }
+
+      statusEl.textContent = failed.length
+        ? `Автолавка · не загрузились: ${failed.join(", ")} (сервис не поднят?)`
+        : `Автолавка · сервисов: ${loaded.length}`;
+      statusEl.classList.toggle("bad", failed.length > 0);
+
+      return merged;
+    }
+
+    buildMergedSpec().then(merged => {
+      if (Object.keys(merged.paths).length === 0) {
+        errorEl.hidden = false;
+        errorEl.textContent =
+          "Ни одна спецификация не загрузилась. Проверьте, что сервисы запущены " +
+          "(502 — сервис не поднят).";
+        return;
+      }
+      addCodeSamples(merged);
+      Redoc.init(merged, {}, container, err => {
+        if (err) {
+          errorEl.hidden = false;
+          errorEl.textContent = "Redoc не смог отрендерить спецификацию: " + err;
+        }
+      });
+    });
+  </script>
+</body>
+</html>

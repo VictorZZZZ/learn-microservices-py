@@ -1,34 +1,34 @@
 # Gateway (nginx в Docker)
 
-Единая точка входа микросервисного приложения — **порт машины `8888`**.
+Единая точка входа микросервисного приложения — **порт машины `7777`**.
 nginx запускается в контейнере, на локальную машину ничего не ставится.
+Здесь же живёт централизованная документация API (Redoc) — `/docs/`,
+статика в папке [api-docs/](api-docs/README.md).
 
-Единственная ответственность gateway — роутинг по префиксу пути. Никакой
-бизнес-логики: JWT по-прежнему проверяется в каждом сервисе, агрегация
-ответов — задача отдельного сервиса оркестрации (BFF), который стоит за
-этим же gateway, как и остальные.
+Ответственность gateway — роутинг по префиксу пути и раздача документации.
+Никакой бизнес-логики: JWT по-прежнему проверяется в каждом сервисе,
+агрегация ответов — задача отдельного сервиса оркестрации (BFF), который
+стоит за этим же gateway, как и остальные.
 
-## Как это устроено
+## Маршрутизация
 
-- nginx слушает `8080` **внутри** контейнера, Docker публикует его на
-  `8888` машины (`"8888:8080"` в docker-compose.yml).
-- Сервисы запускаются на самой машине, поэтому в nginx.conf они
-  адресуются как `host.docker.internal` — изнутри контейнера `127.0.0.1`
-  означал бы сам контейнер.
-- Логи nginx идут в stdout/stderr контейнера — `docker logs gateway`.
+Срезается только префикс сервиса — остальной путь передаётся без
+изменений: путь из документации сервиса отправляется через gateway
+как есть, добавляется один префикс.
 
-| Внешний путь (`http://localhost:8888`) | Сервис (на хосте) | Внутренний путь |
+| Внешний путь (`http://localhost:7777`) | Сервис (на хосте) | Внутренний путь |
 |---|---|---|
-| `/api/**` | orchestrator (`:8000`) | `/**` — префикс `/api` срезается |
-| `/auth/**` | auth-service (`:8001`) | `/v1/auth/**` |
-| `/catalog/**` | catalog-service (`:8002`) | `/v1/**` |
-| `/profile/**` | profile-service (`:8003`) | `/v1/**` |
+| `/api/**` | orchestrator (`:8000`) | `/**` |
+| `/auth/**` | auth-service (`:8001`) | `/**` |
+| `/catalog/**` | catalog-service (`:8002`) | `/**` |
+| `/profile/**` | profile-service (`:8003`) | `/**` |
+| `/docs/`, `/openapi/*.json` | документация (Redoc) | статика + live-спеки сервисов |
 
 Примеры подстановки:
 
-- `POST /auth/login` → `:8001/v1/auth/login`
-- `GET /catalog/products` → `:8002/v1/products`
-- `GET /profile/user-profile` → `:8003/v1/user-profile`
+- `POST /auth/v1/auth/login` → `:8001/v1/auth/login`
+- `GET /catalog/v1/products` → `:8002/v1/products`
+- `GET /profile/v1/user-profile` → `:8003/v1/user-profile`
 
 ## Запуск
 
@@ -56,8 +56,9 @@ nginx запускается в контейнере, на локальную м
 
    ```bash
    docker run -d --name gateway \
-     -p 8888:8080 \
+     -p 7777:8080 \
      -v "$PWD/nginx.conf":/etc/nginx/nginx.conf:ro \
+     -v "$PWD/api-docs/site":/usr/share/nginx/html/api-docs:ro \
      --add-host=host.docker.internal:host-gateway \
      nginx:alpine
    ```
@@ -68,7 +69,8 @@ nginx запускается в контейнере, на локальную м
 2. Быстрая проверка:
 
    ```bash
-   curl -i http://localhost:8888/catalog/products
+   curl -i http://localhost:7777/catalog/v1/products   # роутер
+   open http://localhost:7777/docs/                    # документация
    ```
 
 ## Управление
@@ -83,37 +85,52 @@ docker compose down                   # остановить (или docker rm -
 Правки `nginx.conf` подхватываются `nginx -s reload` — пересоздавать
 контейнер не нужно.
 
+## Документация API (Redoc)
+
+Одна страница со всеми API: **http://localhost:7777/docs/** — все сервисы
+в одной левой панели, сгруппированы по сервисам; пути показаны сразу с
+префиксом gateway. Подробности и инструкция «добавить новый сервис» — в
+[api-docs/README.md](api-docs/README.md).
+
+Коротко: Redoc рендерит **живые** `openapi.json` прямо в браузере — ничего
+не собирается на этапе сборки, документация всегда соответствует текущему
+коду. Спеки отдаются этим же nginx (`/openapi/*.json`), поэтому страница
+и JSON в одном origin и CORS не возникает. Redoc — read-only: выполнять
+запросы — curl'ом (примеры ниже) или в Swagger UI сервиса напрямую на его
+порту (`http://localhost:8001/docs`).
+
 ## Примеры: end-to-end через gateway
 
 ```bash
 # 1. Логин (в ответе access_token)
-curl -s -X POST http://localhost:8888/auth/login \
+curl -s -X POST http://localhost:7777/auth/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username": "your-user", "password": "your-password"}'
 
 # 2. Защищённый запрос profile-сервиса с токеном из шага 1
 TOKEN=...
-curl -s http://localhost:8888/profile/user-profile \
+curl -s http://localhost:7777/profile/v1/user-profile \
   -H "Authorization: Bearer $TOKEN"
 
 # 3. Каталог
-curl -s http://localhost:8888/catalog/products
+curl -s http://localhost:7777/catalog/v1/products
 
 # 4. Агрегированные ответы оркестратора (когда сервис появится)
-curl -s http://localhost:8888/api/...
+curl -s http://localhost:7777/api/...
 ```
 
 ## Траблшутинг
 
 - **502 Bad Gateway** — nginx работает, но целевой сервис на хосте не
   поднят или слушает не тот порт. Проверить: `lsof -i :8001` и т.д.
-- **Порт 8888 занят**: `lsof -i :8888`.
+- **Порт 7777 занят**: `lsof -i :7777`.
 - **Linux-хост**: запускайте uvicorn с `--host 0.0.0.0` и не убирайте
   `--add-host=host.docker.internal:host-gateway` (в compose уже есть).
-- **Swagger** каждого сервиса открывайте напрямую на его порту
+- **Swagger** отдельного сервиса работает только напрямую на его порту
   (`http://localhost:8001/docs`): страница документации FastAPI
   запрашивает `/openapi.json` по абсолютному пути, поэтому за
-  под-префиксом gateway она работает некорректно.
+  под-префиксом gateway она не работает. Для чтения документации всех
+  сервисов сразу используйте `/docs/`.
 - **`/api/**` отдаёт 502**, пока оркестратор не поднят — это ожидаемо.
 
 ## Когда лучше Traefik или Kong вместо nginx
