@@ -1,0 +1,11 @@
+# Общий пакет контрактов auth-домена (енумы ролей/привилегий).
+# -e — editable: правки в ../auth-contracts сразу видны сервису без переустановки
+-e ../auth-contracts
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy[asyncio]>=2.0
+alembic>=1.13
+psycopg[binary]>=3.1
+pydantic-settings>=2.0
+pyjwt>=2.8
