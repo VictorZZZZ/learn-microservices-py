@@ -1,0 +1,17 @@
+# Gateway (nginx) — единая точка входа, порт машины 8888.
+#
+# Сервисы приложения запускаются на самой машине (uvicorn на :8000-:8003),
+# поэтому из контейнера они доступны через host.docker.internal.
+
+services:
+  gateway:
+    image: nginx:alpine
+    container_name: gateway
+    ports:
+      - "7777:8080"   # порт машины : порт контейнера
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    extra_hosts:
+      # на macOS/Windows Docker Desktop резолвит host.docker.internal сам;
+      # запись нужна, чтобы тот же файл работал и на Linux-хосте
+      - "host.docker.internal:host-gateway"

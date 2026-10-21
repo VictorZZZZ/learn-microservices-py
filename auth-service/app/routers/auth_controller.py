@@ -15,7 +15,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.token_service import TokenService
 
-router = APIRouter(prefix="/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/v1", tags=["auth"])
 
 settings = get_settings()
 

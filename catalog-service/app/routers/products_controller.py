@@ -24,7 +24,7 @@ async def get_products(
 
 
 @router.post(
-    "/products",
+    "/create",
     status_code=status.HTTP_201_CREATED,
     response_model=ProductDto,
 )
