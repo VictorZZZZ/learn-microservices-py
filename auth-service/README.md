@@ -10,7 +10,7 @@ REST API на FastAPI, PostgreSQL, SQLAlchemy (async), Alembic.
 - **id пользователя — UUID (uuid4)**, генерируется приложением при создании
   (аналог `UUID.randomUUID()` в JPA). В JSON API и в JWT-клейме `uid` — строкой.
 - **Access-токен** — JWT, подписан по **HS256** общим секретом (`JWT_SECRET`).
-  Внутри — `sub` (username), `uid`, `org_id`, `roles`, `privileges` (эффективные
+  Внутри — `sub` (username), `uid`, `roles`, `privileges` (эффективные
   привилегии = привилегии ролей + прямые привилегии пользователя). Другим
   микросервисам не нужно ходить в auth-сервис за правами — всё уже в токене.
   Живёт 15 минут (настраивается).
@@ -51,15 +51,9 @@ REST API на FastAPI, PostgreSQL, SQLAlchemy (async), Alembic.
 ```json
 {
   "username": "jdoe",
-  "password": "s3cret-password",
-  "first_name": "John",
-  "last_name": "Doe",
-  "org_id": 7
+  "password": "s3cret-password"
 }
 ```
-
-`first_name`, `last_name` и `org_id` необязательны: имена тогда `null`,
-`org_id` по умолчанию `0` («без организации»).
 
 Ответ (201):
 
@@ -68,9 +62,6 @@ REST API на FastAPI, PostgreSQL, SQLAlchemy (async), Alembic.
   "user": {
     "id": "3f2a9c1e-6b7d-4e8f-9a01-2c3b4d5e6f70",
     "username": "jdoe",
-    "first_name": "John",
-    "last_name": "Doe",
-    "org_id": 7,
     "enabled": true,
     "roles": ["READ_ONLY"]
   },
@@ -101,7 +92,6 @@ Payload access-токена (можно посмотреть на jwt.io):
 {
   "sub": "jdoe",
   "uid": "3f2a9c1e-6b7d-4e8f-9a01-2c3b4d5e6f70",
-  "org_id": 7,
   "roles": ["READ_ONLY"],
   "privileges": ["READ"],
   "iat": 1760851200,
@@ -117,7 +107,8 @@ auth-service/
 │   ├── versions/                       — миграции
 │   │   ├── 20261019_create_auth_tables.py      — таблицы (users, roles, ...)
 │   │   ├── 20261019_seed_roles.py              — сиды ролей/привилегий
-│   │   └── 20261019_names_nullable.py          — first/last_name стали nullable
+│   │   ├── 20261019_names_nullable.py          — first/last_name стали nullable
+│   │   └── 20261020_drop_user_names_org.py     — first/last_name и org_id удалены
 │   └── env.py                          — привязка Alembic к настройкам
 ├── alembic.ini
 ├── app/
@@ -226,7 +217,7 @@ UPDATE users SET enabled = false WHERE username = 'jdoe';
 # 1. Регистрация — сразу получаем пару токенов
 curl -s -X POST http://127.0.0.1:8000/v1/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"username":"jdoe","password":"s3cret-password","first_name":"John","last_name":"Doe","org_id":7}'
+  -d '{"username":"jdoe","password":"s3cret-password"}'
 
 # 2. Логин
 curl -s -X POST http://127.0.0.1:8000/v1/auth/login \
