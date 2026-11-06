@@ -1,26 +1,31 @@
 {
+  "$schema": "https://context7.com/schema/docs7.json",
   "name": "Автолавка — Learn Microservices Py",
-  "description": "Учебный проект микросервисов на FastAPI: auth, catalog, profile, recognize и gateway",
-  "navigation": [
-    {
-      "group": "Обзор",
-      "pages": ["docs/architecture"]
-    },
-    {
-      "group": "Auth Service",
-      "pages": ["auth-service/README", "auth-service/docs/db_structure"]
-    },
-    {
-      "group": "Catalog Service",
-      "pages": ["catalog-service/README", "catalog-service/docs/warehose_er"]
-    },
-    {
-      "group": "Profile Service",
-      "pages": ["profile-service/README", "profile-service/docs/db_structure"]
-    },
-    {
-      "group": "Gateway и API-документация",
-      "pages": ["gateway/README", "gateway/api-docs/README"]
-    }
-  ]
+  "colors": {
+    "primary": "#009688"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Обзор",
+        "pages": ["docs/architecture"]
+      },
+      {
+        "group": "Auth Service",
+        "pages": ["auth-service/README", "auth-service/docs/db_structure"]
+      },
+      {
+        "group": "Catalog Service",
+        "pages": ["catalog-service/README", "catalog-service/docs/warehose_er"]
+      },
+      {
+        "group": "Profile Service",
+        "pages": ["profile-service/README", "profile-service/docs/db_structure"]
+      },
+      {
+        "group": "Gateway и API-документация",
+        "pages": ["gateway/README", "gateway/api-docs/README"]
+      }
+    ]
+  }
 }
